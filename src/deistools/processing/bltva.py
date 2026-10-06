@@ -70,12 +70,13 @@ def bltva_band_fit(V, I, B_full, k_exc, e, P, N, Np, Nq, Na):
     P, N     : harmonic-grid spacing (bins) and total number of samples
     Np, Nq, Na: polynomial orders, see module docstring
 
-    Returns (Z_p, theta_q, cond_K, residual_rel, k_band):
+    Returns (Z_p, theta_q, cond_K, residual_rel, k_band, V_fit):
         Z_p          : (Np+1,) complex, theta_p(k_e) / I(k_e)
         theta_q      : (Nq+1,) complex, drift coefficients (real part is v_drift(t))
         cond_K       : condition number of the band's design matrix
         residual_rel : ||K@theta - V(k_band)|| / ||V(k_band)||
         k_band       : the band's bin indices
+        V_fit        : K @ theta, the fitted spectrum over k_band (for diagnostics/plots)
     """
     raw_lo, raw_hi = _band_bounds(k_exc, e, P)
     k_lo = max(1, raw_lo)
@@ -128,17 +129,18 @@ def bltva_band_fit(V, I, B_full, k_exc, e, P, N, Np, Nq, Na):
     y = V[k_band]
     theta, _, _, s = np.linalg.lstsq(K, y, rcond=None)
     cond_K = s.max() / s.min() if s.min() > 0 else np.inf
-    residual_rel = np.linalg.norm(K @ theta - y) / np.linalg.norm(y)
+    V_fit = K @ theta
+    residual_rel = np.linalg.norm(V_fit - y) / np.linalg.norm(y)
 
     theta_p = theta[col_ranges['target']]
     theta_q = theta[col_ranges['dc']][:Nq + 1]
     Z_p = theta_p / I[k_e]
 
-    return Z_p, theta_q, cond_K, residual_rel, k_band
+    return Z_p, theta_q, cond_K, residual_rel, k_band, V_fit
 
 #------------------------------------------------------------------------------#
 
-def bltva_eis_band(V, I, dt, freqs, T_meas):
+def bltva_eis_band(V, I, dt, freqs, T_meas, Np=1, Nq=1, Na=1):
     H_exc = np.round(freqs / freqs[0]).astype(int)
     P = int(round(freqs[0] * T_meas))
     if V.size % P != 0:
@@ -152,9 +154,6 @@ def bltva_eis_band(V, I, dt, freqs, T_meas):
             'multisine_frequencies_Hz do not land exactly on P*H_exc bins; check '
             'the f_min/harmonics convention against T_meas.'
         )
-    Np = 1
-    Nq = 1
-    Na = 1
     N = V.size
     if N % P != 0:
         raise ValueError(f'N ({N}) must be an integer multiple of P ({P})')
@@ -176,7 +175,7 @@ def bltva_eis_band(V, I, dt, freqs, T_meas):
     diagnostics = [None] * n_exc
 
     for e in range(n_exc):
-        Z_p, theta_q, cond_K, residual_rel, k_band = bltva_band_fit(
+        Z_p, theta_q, cond_K, residual_rel, k_band, V_fit = bltva_band_fit(
             V, I, B_full, k_exc, e, P, N, Np, Nq, Na,
         )
         Z_t[e] = sum(Z_p[p] * b[:, p] for p in range(Np + 1))
@@ -185,12 +184,14 @@ def bltva_eis_band(V, I, dt, freqs, T_meas):
             k_exc=int(k_exc[e]), Z_p=Z_p, theta_q=theta_q,
             cond_K=cond_K, residual_rel=residual_rel,
             k_band=(int(k_band[0]), int(k_band[-1])),
+            # frequency-domain fit, for diagnostics/plots (Sec. 2-3 band fit):
+            k_band_bins=k_band, V_meas=V[k_band], V_fit=V_fit,
         )
 
     # Undo the ascending-order sort so outputs follow the caller's H_exc order.
     Z_t[order] = Z_t.copy()
     v_drift_t[order] = v_drift_t.copy()
 
-    return Z_t, v_drift_t
+    return Z_t, v_drift_t, diagnostics
 
 #------------------------------------------------------------------------------#

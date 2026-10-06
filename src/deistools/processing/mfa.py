@@ -138,14 +138,23 @@ class MultiFrequencyAnalysis:
         )
         return impedance, variance, voltage, current, time
 
-    def run_bltva_eis(self, T_meas):
-        impedance, drift = bltva_eis_band(
-            self.ft_voltage,
-            self.ft_current,
+    def run_bltva_eis(self, T_meas, Np=1, Nq=1, Na=1):
+        # bltva_eis_band indexes bins in the unshifted fft convention (positive
+        # frequencies in 1..N//2-1), unlike self.ft_voltage/self.ft_current
+        # which are fftshift'd, so it needs its own unshifted transform.
+        ft_voltage = fft(self.voltage) / self.voltage.size
+        ft_current = fft(self.current) / self.current.size
+        impedance, drift, diagnostics = bltva_eis_band(
+            ft_voltage,
+            ft_current,
             self.sampling_time,
             self.frequencies,
             T_meas,
+            Np=Np,
+            Nq=Nq,
+            Na=Na,
         )
+        self.bltva_diagnostics = diagnostics
         return impedance, drift
 
 
