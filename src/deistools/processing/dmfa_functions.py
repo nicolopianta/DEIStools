@@ -3,6 +3,8 @@ from numpy.fft import fft, fftshift, ifft, ifftshift, fftfreq
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
+from deistools.processing.passband_filters import FermiDiracFilter
+
 
 def extract_zero_frequency(
         ft_voltage, 
@@ -38,6 +40,74 @@ def extract_impedance(
         current_filtered = Npts_elab * ifft(ifftshift(ft_current[elaboration_rng] * filter))
         impedance[f] = voltage_filtered / current_filtered
     return impedance
+
+def block_average(arr, n):
+    """Mean over consecutive blocks of `n` samples along the last axis (the
+    length along that axis must be a multiple of `n`)."""
+    if arr.ndim == 2:
+        return arr.reshape(arr.shape[0], arr.shape[1] // n, n).mean(2)
+    return arr.reshape(arr.size // n, n).mean(1)
+
+
+def extract_zero_frequency_fd(
+        ft_voltage,
+        ft_current,
+        freq_axis,
+        bw_zero,
+        Npts_elab,
+        time_resolution,
+        zero_filter_order=100,
+    ):
+    """
+    Zero-frequency (DC) voltage and current, time-resolved: the full spectrum is
+    multiplied by a Fermi-Dirac low-pass centred on 0 Hz (bandwidth `bw_zero` in
+    Hz, steepness `zero_filter_order`), transformed back, and block-averaged to
+    `Npts_elab` points. Unlike `extract_zero_frequency` it works on the whole
+    (fftshift-ed) spectrum, so the bandwidth is a physical quantity in Hz rather
+    than a number of bins.
+
+    Returns (voltage, current, time), each of length `Npts_elab`; `time` is in the
+    unit of `time_resolution` (the sampling time).
+    """
+    flt = FermiDiracFilter(freq_axis, 0, bw_zero, zero_filter_order)
+    n = freq_axis.size
+    voltage = n * ifft(ifftshift(ft_voltage * flt.values)).real
+    current = n * ifft(ifftshift(ft_current * flt.values)).real
+    time = time_resolution * np.arange(n)
+    block = n // Npts_elab
+    return block_average(voltage, block), block_average(current, block), block_average(time, block)
+
+
+def extract_impedance_fd(
+        ft_voltage,
+        ft_current,
+        freq_axis,
+        indexes_multisine_freq: list,
+        bw_filter,
+        filter_order,
+        Npts_elab,
+):
+    """
+    Time-resolved impedance at each multisine frequency: a Fermi-Dirac band-pass
+    (centre = the frequency's bin, bandwidth `bw_filter` in Hz, steepness
+    `filter_order`) is applied to the full spectrum of voltage and current, both
+    are transformed back to (complex, analytic) time signals, and their ratio is
+    block-averaged to `Npts_elab` points. Each frequency is reduced to
+    `Npts_elab` points immediately, so memory stays at (n_freq, Npts_elab)
+    instead of (n_freq, N).
+
+    Returns an array (n_freq, Npts_elab), complex.
+    """
+    n = freq_axis.size
+    block = n // Npts_elab
+    impedance = np.zeros((len(indexes_multisine_freq), Npts_elab), dtype="complex128")
+    for i, f in enumerate(indexes_multisine_freq):
+        flt = FermiDiracFilter(freq_axis, freq_axis[f], bw_filter, filter_order)
+        voltage_filtered = n * ifft(ifftshift(ft_voltage * flt.values))
+        current_filtered = n * ifft(ifftshift(ft_current * flt.values))
+        impedance[i] = block_average(voltage_filtered / current_filtered, block)
+    return impedance
+
 
 def visualize_dmfa_filtering(
         filter : np.array,
