@@ -166,20 +166,40 @@ class MultiFrequencyAnalysis:
         return self.freq_indexes
 
     def search_freq_indexes(self, input_signal):
-        guess_i_multisine_freq = self.compute_freq_indexes(input_signal)
-        index_multisine_freq = np.zeros(self.frequencies.size,dtype='int64')
-        dist_between_freq = np.zeros(self.frequencies.size, dtype='float32')
-        dist_between_freq[0] = np.min([self.frequencies[1] - self.frequencies[0], self.frequencies[0]])
-        for f in range(1, self.frequencies.size-1):
-            dist_between_freq[f] = np.min([self.frequencies[f] - self.frequencies[f-1], self.frequencies[f+1] - self.frequencies[f]])    
-        dist_between_freq[-1] = self.frequencies[-1] *0.2# - multisine_freq[-2] # Fixed
-        # dist_peak = dist_between_freq/(dt*N_samples)
-        dist_between_freq_P = 2 * np.floor(dist_between_freq * self.sampling_time  * input_signal.size / 4)
-        for f in range(0, self.frequencies.size):   
-            min_searching = int(guess_i_multisine_freq[f]) - int(dist_between_freq_P[f]/2)
-            max_searching = int(guess_i_multisine_freq[f]) + int(dist_between_freq_P[f]/2)
-            searching_freq_rng =  np.arange(min_searching, max_searching)
-            index_multisine_freq[f] = min_searching + int(np.argmax((np.abs(input_signal[(searching_freq_rng)])),axis = 0))  
+        """
+        Refine the nominal FFT bin of each multisine frequency by looking for the
+        spectral peak of `input_signal` (usually ft_current) in a small window around it.
+
+        The window half-width is a quarter of the distance to the nearest neighbouring
+        frequency (in bins), but at least 1 bin; the window is symmetric, inclusive,
+        and never contains the DC bin. (With a one-period analysis window the lowest
+        tone sits at bin 1, and a window reaching bin 0 can pick up the DC/drift
+        leakage instead of the tone, which gives a real-valued, wrong impedance.)
+        If anything fails, `self.freq_indexes` is left as it was before the call.
+        """
+        previous = self.freq_indexes
+        try:
+            guess_i_multisine_freq = self.compute_freq_indexes(input_signal)
+            n_freq = self.frequencies.size
+            index_multisine_freq = np.zeros(n_freq, dtype='int64')
+            dist_between_freq = np.zeros(n_freq, dtype='float32')
+            if n_freq == 1:
+                dist_between_freq[0] = self.frequencies[0]
+            else:
+                dist_between_freq[0] = np.min([self.frequencies[1] - self.frequencies[0], self.frequencies[0]])
+                for f in range(1, n_freq - 1):
+                    dist_between_freq[f] = np.min([self.frequencies[f] - self.frequencies[f-1], self.frequencies[f+1] - self.frequencies[f]])
+                dist_between_freq[-1] = self.frequencies[-1] * 0.2  # no upper neighbour
+            dist_between_freq_P = 2 * np.floor(dist_between_freq * self.sampling_time * input_signal.size / 4)
+            half_window = np.maximum((dist_between_freq_P / 2).astype(int), 1)
+            for f in range(0, n_freq):
+                min_searching = max(int(guess_i_multisine_freq[f]) - int(half_window[f]), self.index_f0 + 1)
+                max_searching = min(int(guess_i_multisine_freq[f]) + int(half_window[f]), input_signal.size - 1)
+                searching_freq_rng = np.arange(min_searching, max_searching + 1)
+                index_multisine_freq[f] = min_searching + int(np.argmax(np.abs(input_signal[searching_freq_rng]), axis=0))
+        except Exception:
+            self.freq_indexes = previous
+            raise
         self.freq_indexes = index_multisine_freq.tolist()
         return self.freq_indexes
 
