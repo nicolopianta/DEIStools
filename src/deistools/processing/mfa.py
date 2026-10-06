@@ -3,7 +3,10 @@ import numpy as np
 
 from deistools.visualise import inspect_spectrum,inspect_spectrum_phase, visualise_peaks, visualise_peaks_phase
 # from deistools.processing import fermi_dirac_filter
-from deistools.processing.dmfa_functions import extract_zero_frequency, extract_impedance, visualize_dmfa_filtering, extract_impedance_with_error
+from deistools.processing.dmfa_functions import (
+    extract_zero_frequency, extract_impedance, visualize_dmfa_filtering, extract_impedance_with_error,
+    extract_zero_frequency_fd, extract_impedance_fd,
+)
 from deistools.processing.stft_functions import estimate_impedance as stft_eis
 from deistools.processing.bltva import bltva, visualize_bltva_fit
 
@@ -55,6 +58,43 @@ class MultiFrequencyAnalysis:
             self.freq_indexes,
             filter,
             Npts_elab
+        )
+        return impedance, voltage, current, time
+
+    def run_dmfa_fd(self,
+                    time_resolution,
+                    bw_zero,
+                    bw_filter,
+                    filter_order,
+                    Npts_elab,
+                    zero_filter_order=100,
+        ):
+        """
+        DMFA with explicit Fermi-Dirac filters, bandwidths in Hz:
+          bw_zero, zero_filter_order : low-pass around 0 Hz for the DC voltage/current
+          bw_filter, filter_order    : band-pass around each multisine frequency
+        Requires compute_freq_axis(), compute_fft() and freq_indexes (see
+        search_freq_indexes). `Npts_elab` is the number of output time points; the
+        signal length must be a multiple of it. Returns (impedance, voltage,
+        current, time) like run_dmfa.
+        """
+        voltage, current, time = extract_zero_frequency_fd(
+            self.ft_voltage,
+            self.ft_current,
+            self.freq_axis,
+            bw_zero,
+            Npts_elab,
+            time_resolution,
+            zero_filter_order=zero_filter_order,
+        )
+        impedance = extract_impedance_fd(
+            self.ft_voltage,
+            self.ft_current,
+            self.freq_axis,
+            self.freq_indexes,
+            bw_filter,
+            filter_order,
+            Npts_elab,
         )
         return impedance, voltage, current, time
 
