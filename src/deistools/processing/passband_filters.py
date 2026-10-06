@@ -6,8 +6,12 @@ def create_fermi_dirac_fun(fr, fc, bw, n):
     Create a digital filter shaped as a symmetric Fermi-Dirac function.
     """
     X = (fr - fc) / bw
-    Y = np.cosh(n) / (np.cosh(n * X) + np.cosh(n))
-    return Y
+    # Y = cosh(n) / (cosh(n*X) + cosh(n)), written with exponentials of
+    # non-positive-or-clipped arguments so that large orders or far-away
+    # frequencies underflow to 0 instead of overflowing cosh() to inf.
+    a = n * np.abs(X)
+    ratio = np.exp(np.minimum(a - n, 700.0)) * (1 + np.exp(-2 * a)) / (1 + np.exp(-2.0 * n))
+    return 1.0 / (1.0 + ratio)
 
 @dataclass
 class FermiDiracFilter:
