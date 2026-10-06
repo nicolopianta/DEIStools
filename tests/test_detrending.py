@@ -39,6 +39,31 @@ class Detrend(unittest.TestCase):
         # tone amplitude is preserved: residual between trend-removed signal and tones is small
         self.assertLess(np.sqrt(np.mean((detrended[inner] - tones[inner]) ** 2)), 0.1 * 0.01)
 
+    def test_optional_edge_refinement_follows_a_fast_relaxation_at_the_start(self):
+        fs, t, freqs, tones = _record(n_blocks=60)
+        drift = 1.0 + 1.5 * np.exp(-t / 40.0) + 0.0005 * t              # time constant 40 s
+        x = drift + tones
+        _, plain = dt.detrend(x, fs, freqs, dt.METHOD_SPLINE, knot_spacing_periods=3.0)
+        _, refined = dt.detrend(x, fs, freqs, dt.METHOD_SPLINE, knot_spacing_periods=3.0, edge_knots=6, fine=10)
+        head = slice(0, 100)  # first 10 s
+        self.assertLess(np.abs(refined - drift)[head].max(), np.abs(plain - drift)[head].max() / 5)
+        self.assertLess(np.abs(refined - drift)[head].max(), 0.05)
+
+    def test_default_spline_knots_are_the_block_centres_every_n_blocks(self):
+        # pins the default knot placement: the original formulation took every n-th block centre
+        # (cc[n], cc[2n], ...) that lies strictly inside (cc[1], cc[-2])
+        from scipy.interpolate import LSQUnivariateSpline
+        fs, t, freqs, tones = _record(n_blocks=54)               # 54 blocks: a knot of 10 falls just before the end
+        x = 1.0 + 2.0 * np.exp(-t / 120.0) + 0.002 * t + tones
+        block = 100
+        yc, cc = dt.block_means(x, block)
+        for n_blocks in (3, 10):
+            step = n_blocks
+            knots = cc[step::step]
+            knots = knots[(knots > cc[1]) & (knots < cc[-2])]
+            reference = LSQUnivariateSpline(cc, yc, knots, k=3)(np.arange(x.size, dtype=float))
+            np.testing.assert_allclose(dt.fit_smooth_trend(x, block, dt.METHOD_SPLINE, 3, n_blocks), reference, atol=1e-12)
+
     def test_polynomial_fits_polynomial_drift(self):
         fs, t, freqs, tones = _record()
         drift = 1.0 + 0.003 * t - 2e-6 * t ** 2

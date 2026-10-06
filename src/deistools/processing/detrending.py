@@ -112,10 +112,21 @@ def tone_signal(x, fs, freqs, half_bw):
     return np.fft.irfft(spectrum, n)
 
 
-def fit_smooth_trend(x, block, method, order, knot_spacing_blocks):
-    """Polynomial (Legendre) or cubic-spline (least squares, uniform knots) fit through
-    the block means of `x`, evaluated on every sample. The spline needs scipy."""
-    yc, cc = block_means(x, block)
+def fit_smooth_trend(x, block, method, order, knot_spacing_blocks, edge_knots=0, fine=1):
+    """Polynomial (Legendre) or cubic-spline (least squares) fit through block means of
+    `x`, evaluated on every sample. The spline needs scipy.
+
+    block                 samples per knot-spacing unit (one period of the lowest tone)
+    knot_spacing_blocks   spline knot spacing, in `block`s
+    edge_knots            spline only: extra knots, one per `block`, over the first and last
+                          `edge_knots` blocks, so the spline can follow a fast change at the
+                          ends of the record (a relaxation after a current step)
+    fine                  the block means are taken over block // fine samples. Use fine > 1
+                          only once the tones have been subtracted from `x`: averaging over
+                          a whole period is what cancels them otherwise, but it also puts the
+                          first data point half a period away from the record's edge.
+    """
+    yc, cc = block_means(x, max(1, block // fine))
     n = x.size
     t = np.arange(n, dtype=float)
     if method == METHOD_POLY:
@@ -127,13 +138,19 @@ def fit_smooth_trend(x, block, method, order, knot_spacing_blocks):
     except ImportError as exc:  # pragma: no cover
         raise ImportError("The spline detrend needs scipy (pip install scipy).") from exc
 
-    step = max(1, int(round(knot_spacing_blocks)))
-    knots = cc[step::step]
+    step = max(1, int(round(knot_spacing_blocks))) * block      # knot spacing, samples
+    knots = np.arange(cc[0] + step, cc[-1], step)   # on the grid of block centres; the interior filter below drops the ends
+    if edge_knots:
+        knots = np.r_[knots,
+                      np.arange(cc[0] + block, cc[0] + edge_knots * block + 1, block),
+                      np.arange(cc[-1] - edge_knots * block, cc[-1] - block + 1, block)]
+        knots = np.unique(np.round(knots, 6))
     knots = knots[(knots > cc[1]) & (knots < cc[-2])] if cc.size > 3 else knots[:0]
     return LSQUnivariateSpline(cc, yc, knots, k=3)(t)
 
 
-def detrend(x, fs, freqs, method, order=3, knot_spacing_periods=10.0, n_iter=3, half_bw=None):
+def detrend(x, fs, freqs, method, order=3, knot_spacing_periods=10.0, n_iter=3, half_bw=None,
+            edge_knots=0, fine=1):
     """
     Returns (detrended, trend) with detrended + trend == x.
 
@@ -146,6 +163,17 @@ def detrend(x, fs, freqs, method, order=3, knot_spacing_periods=10.0, n_iter=3, 
     n_iter                tone-subtraction/refit iterations (poly and spline)
     half_bw               half-width [Hz] of the band taken as "tone" around each
                           frequency when estimating them; defaults to 0.1 x lowest
+    edge_knots, fine      spline only, see fit_smooth_trend; OFF by default (0, 1). The first fit
+                          uses whole-period blocks (blind to the tones); with these set the
+                          refits, after the tone estimate has been subtracted, use blocks of
+                          period/fine and extra knots at the record ends. On a synthetic record
+                          with a fast relaxation at the start they cut the first points' error
+                          from ~100 % to ~2 % (e.g. edge_knots=6, fine=10), but on a real record
+                          with a strong initial decay and a current step in its first seconds
+                          (DEIS_Tests/test_federica_3) the refit became unstable at the very
+                          start (the tone estimate is unreliable at the record edge and feeds
+                          back into the trend): the potential trend at t=0 was 0.37 V against
+                          0.76 V measured. Use with care; check detrended vs data at the ends.
     """
     x = np.asarray(x, dtype=float)
     if method == METHOD_NONE or x.size < 4:
@@ -166,5 +194,5 @@ def detrend(x, fs, freqs, method, order=3, knot_spacing_periods=10.0, n_iter=3, 
     trend = fit_smooth_trend(x, block, method, order, knot_spacing_periods)
     for _ in range(max(0, n_iter)):
         tones = tone_signal(x - trend, fs, freqs, half_bw)
-        trend = fit_smooth_trend(x - tones, block, method, order, knot_spacing_periods)
+        trend = fit_smooth_trend(x - tones, block, method, order, knot_spacing_periods, edge_knots, fine)
     return x - trend, trend
