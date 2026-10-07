@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "deistools"
 version = "0.1.0"
@@ -9,13 +13,19 @@ maintainers = [
     {name = "Federico Scarpioni", email = "federicoscarpioni@gmail.com"},
 ]
 readme = "README.md"
-requires-python = ""
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "matplotlib",
 ]
 license = "MIT"
 license-files = ["LICENSE"]
+
+[project.optional-dependencies]
+# smooth-spline detrending (deistools.processing.detrending, METHOD_SPLINE)
+spline = ["scipy"]
+# faster reading of measurement_data.txt in deistools.processing.data_loader
+loader = ["pandas"]
 
 [project.urls]
 Repository = "https://github.com/federicoscarpioni/deistools.git"
