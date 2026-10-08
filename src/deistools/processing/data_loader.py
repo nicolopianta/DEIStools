@@ -86,6 +86,11 @@ class ExperimentData:
     decimated_voltage: np.ndarray = None     # V, all techniques concatenated in run order
     decimated_current: np.ndarray = None     # A
     technique_folders: list = field(default_factory=list)
+    # How many blocks / decimated samples each technique folder contributed to `impedance` / `decimated_*` (in run
+    # order, only folders that had the file): the boundaries of the pieces a series is made of, e.g. for
+    # deistools.processing.smoothing.segment_bounds(...).
+    block_counts: list = field(default_factory=list)
+    sample_counts: list = field(default_factory=list)
     notes: list = field(default_factory=list)  # one human-readable line per thing loaded/missing/failed
 
 
@@ -149,9 +154,9 @@ def load_experiment(experiment_folder) -> ExperimentData:
     try:
         imps = [np.load(i) for i, _, _ in sources if i.exists()]
         if imps:
-            imp = np.hstack(imps)
-            nonzero_cols = [i for i in range(imp.shape[1]) if np.any(np.abs(imp[:, i]) > 0)]
-            data.impedance = imp[:, nonzero_cols] if nonzero_cols else imp[:, :0]
+            kept = [piece[:, np.any(np.abs(piece) > 0, axis=0)] for piece in imps]    # empty blocks dropped
+            data.block_counts = [piece.shape[1] for piece in kept]
+            data.impedance = np.hstack(kept)
             notes.append(f"impedance: {data.impedance.shape[1]} block(s) x {data.impedance.shape[0]} freq(s) [{where}]")
             if data.frequencies is not None and data.frequencies.size != data.impedance.shape[0]:
                 notes.append(
@@ -168,6 +173,7 @@ def load_experiment(experiment_folder) -> ExperimentData:
         if pairs:
             data.decimated_voltage = np.concatenate([v for v, _ in pairs])
             data.decimated_current = np.concatenate([c for _, c in pairs])
+            data.sample_counts = [v.size for v, _ in pairs]
             notes.append(f"decimated voltage/current: {data.decimated_voltage.size:,} samples")
         else:
             notes.append("decimated voltage/current: not found")

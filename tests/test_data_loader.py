@@ -35,10 +35,25 @@ class LoadExperiment(unittest.TestCase):
             self.assertEqual(data.impedance.shape, (3, 2 + 0 + 3 + 1))
             np.testing.assert_array_equal(data.impedance[0].real, [1, 1, 3, 3, 3, 4])
             self.assertEqual(data.decimated_voltage.size, 5 * 6)
+            self.assertEqual(data.block_counts, [2, 0, 3, 1])          # where each technique's blocks start and end
+            self.assertEqual(data.sample_counts, [10, 0, 15, 5])
             np.testing.assert_array_equal(data.decimated_current[:10], -np.ones(10))
             np.testing.assert_array_equal(data.frequencies, [1.0, 3.0, 7.0])
             np.testing.assert_allclose(data.potential, [1.0, 1.1])
             self.assertEqual(len(data.time), 2)
+
+    def test_blocks_that_were_never_filled_are_dropped_and_not_counted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            d = _technique(root, 0, 0, 4, 1.0)
+            z = np.load(d / "impedance.npy")
+            z[:, 3] = 0                                    # the buffer's unused tail
+            np.save(d / "impedance.npy", z)
+            _technique(root, 0, 1, 2, 2.0)
+            data = load_experiment(root)
+            self.assertEqual(data.block_counts, [3, 2])
+            self.assertEqual(data.impedance.shape[1], 5)
+            self.assertEqual(sum(data.block_counts), data.impedance.shape[1])
 
     def test_run_order_is_by_loop_then_sequence(self):
         with tempfile.TemporaryDirectory() as tmp:
