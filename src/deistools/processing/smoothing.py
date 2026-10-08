@@ -207,6 +207,8 @@ def smooth(y, method=METHOD_SAVGOL, *, window=11, polyorder=2, sigma=2.0, deriv=
     moved = np.moveaxis(np.asarray(y, dtype=float), axis, -1)
     slices = _segment_slices(moved.shape[-1], segments)
     window = odd_window(window, minimum=1)
+    if method == METHOD_SAVGOL and polyorder >= window:
+        raise ValueError(f"the Savitzky-Golay polynomial order ({polyorder}) must be smaller than the window ({window})")
 
     def one_row(row):
         out = np.empty_like(row)

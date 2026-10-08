@@ -146,6 +146,8 @@ class Properties(unittest.TestCase):
             S.smooth(y, "Kalman")
         with self.assertRaises(ValueError):
             S.smooth(y, S.METHOD_MEAN, edge="wrap")
+        with self.assertRaises(ValueError):
+            S.smooth(y, S.METHOD_SAVGOL, window=5, polyorder=5)
 
 
 class Impedance(unittest.TestCase):
