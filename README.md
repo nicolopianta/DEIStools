@@ -44,6 +44,7 @@ The [`examples/`](examples/) directory contains runnable scripts demonstrating s
 - `dmfa_pipeline` — `run_dmfa_on_record(...)`: detrend, DMFA and DC extraction on a whole decimated record in one call; `zero_order_hold_resample` to put coarser results on the DMFA time axis.
 - `data_loader` — `load_experiment(folder)` / `find_technique_folders(folder)` read the `pico_aquisition/cycle_<loop>_sequence_<technique>/` experiment folders written by the DEIS acquisition software, without any GUI toolkit.
 - `spectrum` — `amplitude_spectrum`, `log_binned_max` for plotting long spectra.
+- `smoothing` — smooth a series along time (e.g. the impedance at one frequency): `smooth` (Savitzky-Golay, Gaussian, moving average, moving median; real or complex; pieces of a run filtered independently with `segments`, NaN gaps kept), `smooth_impedance` (also on magnitude and unwrapped phase) and `hampel` (isolated outliers). Pure numpy.
 
 ## Tests
 
